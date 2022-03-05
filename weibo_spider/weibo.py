@@ -22,7 +22,6 @@ class Weibo:
     def __str__(self):
         """打印一条微博"""
         result = self.content + '\n'
-        result += u'微博发布位置：%s\n' % self.publish_place
         result += u'发布时间：%s\n' % self.publish_time
         result += u'发布工具：%s\n' % self.publish_tool
         result += u'点赞数：%d\n' % self.up_num

@@ -10,7 +10,9 @@ import shutil
 import sys
 from datetime import date, datetime, timedelta
 from time import sleep
+from urllib import request
 
+import requests
 from absl import app, flags
 from tqdm import tqdm
 
@@ -30,6 +32,7 @@ logging_path = os.path.split(
     os.path.realpath(__file__))[0] + os.sep + 'logging.conf'
 logging.config.fileConfig(logging_path)
 logger = logging.getLogger('spider')
+
 
 
 class Spider:
@@ -56,6 +59,7 @@ class Spider:
         ]  # 随机等待时间，即每次暂停要sleep多少秒
         self.global_wait = config['global_wait']  # 配置全局等待时间，如每爬1000页等待3600秒等
         self.page_count = 0  # 统计每次全局等待后，爬取了多少页，若页数满足全局等待要求就进入下一次全局等待
+        self.keywords = config['keywords']
         self.write_mode = config[
             'write_mode']  # 结果信息保存类型，为list形式，可包含txt、csv、json、mongo和mysql五种类型
         self.pic_download = config[
@@ -124,9 +128,41 @@ class Spider:
         self.got_num = 0  # 存储爬取到的微博数
         self.weibo_id_list = []  # 存储爬取到的所有微博id
 
+
+    def keywords_match(self,weibos):
+        keywords = self.keywords
+        for weibo in weibos:
+            content = weibo.content
+            if any([w in content and w for w in keywords]):
+                logger.debug('---- match , {}'.format(content))
+                self.push_to_wx(weibo)
+
+
+
+    def push_to_wx(self,weibo):
+        requests.get(url='https://service-563cho7b-1308754715.sh.apigw.tencentcs.com/release/wecomchan',
+                     params={"sendkey": "gg550805",
+                             "msg_type": "text",
+                             "msg": weibo})
+
     def write_weibo(self, weibos):
         """将爬取到的信息写入文件或数据库"""
         for writer in self.writers:
+            latest = writer.get_latest_weibo()
+            if latest and latest[0] == weibos[0].id:
+                logger.debug("no update")
+                # return
+            writer.write_weibo(weibos)
+        for downloader in self.downloaders:
+            downloader.download_files(weibos)
+
+    def write_weibo_and_notify(self, weibos):
+        for writer in self.writers:
+            latest = writer.get_latest_weibo()
+            if latest and latest[0] == weibos[0].id:
+                logger.debug("no update")
+                # return
+            self.keywords_match(weibos)
             writer.write_weibo(weibos)
         for downloader in self.downloaders:
             downloader.download_files(weibos)
@@ -150,6 +186,53 @@ class Spider:
         AvatarPictureDownloader(
             self._get_filepath('img'),
             self.file_download_timeout).handle_download(pic_urls)
+
+    def get_first_page_weibo(self):
+        try:
+            since_date = datetime_util.str_to_time(
+                self.user_config['since_date'])
+            now = datetime.now()
+            if since_date <= now:
+                page_num = IndexParser(
+                    self.cookie,
+                    self.user_config['user_uri']).get_page_num()  # 获取微博总页数
+                self.page_count += 1
+                if self.page_count > 2 and (self.page_count +
+                                            page_num) > self.global_wait[0][0]:
+                    wait_seconds = int(
+                        self.global_wait[0][1] *
+                        min(1, self.page_count / self.global_wait[0][0]))
+                    logger.info(u'即将进入全局等待时间，%d秒后程序继续执行' % wait_seconds)
+                    for i in tqdm(range(wait_seconds)):
+                        sleep(1)
+                    self.page_count = 0
+                    self.global_wait.append(self.global_wait.pop(0))
+                page1 = 0
+                random_pages = random.randint(*self.random_wait_pages)
+
+                weibos, self.weibo_id_list, to_continue = PageParser(
+                    self.cookie,
+                    self.user_config, 1, self.filter).get_one_page(
+                        self.weibo_id_list)  # 获取第page页的全部微博
+                logger.info(
+                    u'%s已获取%s(%s)的第%d页微博%s',
+                    '-' * 30,
+                    self.user.nickname,
+                    self.user.id,
+                    1,
+                    '-' * 30,
+                )
+                # 更新用户user_id_list.txt中的since_date
+                if self.user_config_file_path or FLAGS.u:
+                    config_util.update_user_config_file(
+                        self.user_config_file_path,
+                        self.user_config['user_uri'],
+                        self.user.nickname,
+                        self.new_since_date,
+                    )
+                yield weibos
+        except Exception as e:
+            logger.exception(e)
 
     def get_weibo_info(self):
         """获取微博信息"""
@@ -179,6 +262,7 @@ class Spider:
                         self.cookie,
                         self.user_config, page, self.filter).get_one_page(
                             self.weibo_id_list)  # 获取第page页的全部微博
+                    # self.keywords_match(weibos)
                     logger.info(
                         u'%s已获取%s(%s)的第%d页微博%s',
                         '-' * 30,
@@ -317,8 +401,8 @@ class Spider:
             if self.pic_download:
                 self.download_user_avatar(user_config['user_uri'])
 
-            for weibos in self.get_weibo_info():
-                self.write_weibo(weibos)
+            for weibos in self.get_first_page_weibo():
+                self.write_weibo_and_notify(weibos)
                 self.got_num += len(weibos)
             if not self.filter:
                 logger.info(u'共爬取' + str(self.got_num) + u'条微博')
@@ -365,8 +449,8 @@ def _get_config():
                     os.getcwd())
         sys.exit()
     try:
-        with open(config_path) as f:
-            config = json.loads(f.read())
+        with open(config_path,encoding='utf-8') as f:
+            config = json.load(f)
             return config
     except ValueError:
         logger.error(u'config.json 格式不正确，请访问 '

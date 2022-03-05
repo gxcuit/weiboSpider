@@ -25,6 +25,13 @@ class SqliteWriter(Writer):
         connection = sqlite3.connect(self.sqlite_config)
         self._sqlite_create(connection, sql)
 
+    def _sqlite_select(self, sql):
+        import sqlite3
+        connection = sqlite3.connect(self.sqlite_config)
+        cursor = connection.cursor()
+        cursor.execute(sql)
+        return cursor.fetchone()
+
     def _sqlite_insert(self, table, data_list):
         """向sqlite表插入或更新数据"""
         import sqlite3
@@ -49,6 +56,12 @@ class SqliteWriter(Writer):
                 logger.exception(e)
             finally:
                 connection.close()
+
+    def get_latest_weibo(self):
+        sql = "SELECT * FROM weibo ORDER BY publish_time DESC LIMIT 1 "
+        res = self._sqlite_select(sql)
+        print(res)
+        return res
 
     def write_weibo(self, weibos):
         """将爬取的微博信息写入sqlite数据库"""
@@ -106,3 +119,5 @@ class SqliteWriter(Writer):
         self._sqlite_create_table(create_table)
         self._sqlite_insert('user', [user.__dict__])
         logger.info(u'%s信息写入sqlite数据库完毕', user.nickname)
+
+

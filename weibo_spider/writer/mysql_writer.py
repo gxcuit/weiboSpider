@@ -112,6 +112,8 @@ class MySqlWriter(Writer):
         except Exception as e:
             logger.exception(e)
 
+
+
     def write_user(self, user):
         """将爬取的用户信息写入MySQL数据库"""
         try:
