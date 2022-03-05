@@ -161,7 +161,7 @@ class Spider:
             latest = writer.get_latest_weibo()
             if latest and latest[0] == weibos[0].id:
                 logger.debug("no update")
-                # return
+                return
             self.keywords_match(weibos)
             writer.write_weibo(weibos)
         for downloader in self.downloaders:
