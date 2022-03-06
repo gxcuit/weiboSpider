@@ -20,6 +20,7 @@ from . import config_util, datetime_util
 from .downloader import AvatarPictureDownloader
 from .parser import AlbumParser, IndexParser, PageParser, PhotoParser
 from .user import User
+import  datetime_util
 
 FLAGS = flags.FLAGS
 
@@ -129,13 +130,12 @@ class Spider:
         self.weibo_id_list = []  # 存储爬取到的所有微博id
 
 
-    def keywords_match(self,weibos):
+    def keywords_match(self,weibo):
         keywords = self.keywords
-        for weibo in weibos:
-            content = weibo.content
-            if any([w in content and w for w in keywords]):
-                logger.debug('---- match , {}'.format(content))
-                self.push_to_wx(weibo)
+        content = weibo.content
+        if any([w in content and w for w in keywords]):
+            logger.debug('---- match , {}'.format(content))
+            self.push_to_wx(weibo)
 
 
 
@@ -158,11 +158,21 @@ class Spider:
 
     def write_weibo_and_notify(self, weibos):
         for writer in self.writers:
-            latest = writer.get_latest_weibo()
-            if latest and latest[0] == weibos[0].id:
+            db_latest = writer.get_latest_weibo()
+            if db_latest and db_latest['id'] == weibos[0].id:
                 logger.debug("no update")
                 return
-            self.keywords_match(weibos)
+            db_latest_time = db_latest['publish_time'] if db_latest else self.since_date
+            db_latest_time = datetime_util.str_to_time(db_latest_time)
+            for weibo in weibos:
+                if datetime_util.str_to_time(weibo.publish_time) <=db_latest_time:
+                    break
+                keywords = self.keywords
+                content = weibo.content
+
+                if any([w in content and w for w in keywords]):
+                    logger.debug('---- match , {}'.format(content))
+                    self.push_to_wx(weibo)
             writer.write_weibo(weibos)
         for downloader in self.downloaders:
             downloader.download_files(weibos)
