@@ -160,7 +160,7 @@ class Spider:
         for writer in self.writers:
             db_latest = writer.get_latest_weibo()
             if db_latest and db_latest['id'] == weibos[0].id:
-                logger.debug("no update")
+                logger.info("no update")
                 return
             db_latest_time = db_latest['publish_time'] if db_latest else self.since_date
             db_latest_time = datetime_util.str_to_time(db_latest_time)
@@ -171,7 +171,7 @@ class Spider:
                 content = weibo.content
 
                 if any([w in content and w for w in keywords]):
-                    logger.debug('---- match , {}'.format(content))
+                    logger.info('---- match , {}'.format(content))
                     self.push_to_wx(weibo)
             writer.write_weibo(weibos)
         for downloader in self.downloaders:
